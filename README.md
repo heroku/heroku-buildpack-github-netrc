@@ -60,7 +60,7 @@ If this does not output an existing buildpack, follow the instructions at https:
 
 Next, prepend this buildpack to your list of buildpacks, so it runs before your app is built:
 
-    $ heroku buildpacks:add -i 1 https://github.com/timshadel/heroku-buildpack-github-netrc.git
+    $ heroku buildpacks:add -i 1 https://github.com/heroku/heroku-buildpack-github-netrc.git
 
 Set your GitHub auth token:
 
@@ -73,13 +73,9 @@ $ git push heroku master  # push your changes to Heroku
 
 ...git output...
 
------> Fetching custom git buildpack... done
------> Multipack app detected
-=====> Downloading Buildpack: https://github.com/timshadel/heroku-buildpack-github-netrc.git
-=====> Detected Framework: github-netrc
+-----> github-netrc app detected
        Generated .netrc & .curlrc files (available only at build-time)
        GitHub User:   my-read-only-user
-       Authorization: GITHUB_AUTH_TOKEN for Heroku deplyoments (private repo access)
        Organizations: my-org, another-org
 ...
 ```
