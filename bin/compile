@@ -1,58 +1,42 @@
-#!/usr/bin/env ruby
+#!/usr/bin/env bash
 
-require 'erb'
-require 'fileutils'
-require "#{File.join(File.dirname(__FILE__), '..', 'lib', 'github')}"
+set -euo pipefail
 
-build_dir    = ARGV[0]
-cache_dir    = ARGV[1]
-env_dir      = ARGV[2]
+BUILD_DIR="${1}"
+ENV_DIR="${3}"
 
-github_token = if env_dir
-                 token_file = File.join(env_dir, 'GITHUB_AUTH_TOKEN')
-                 File.open(token_file, &:read) if File.exist? token_file
-               else
-                 # Legacy user-env-compile support
-                 # TODO: Remove once deprecation is complete
-                 ENV['GITHUB_AUTH_TOKEN']
-               end
+CURL_OPTIONS='--silent --show-error --fail --retry 3 --retry-connrefused --connect-timeout 5 --max-time 30'
 
-if github_token.nil?
-  puts "       !!!! GITHUB_AUTH_TOKEN not set"
-  puts "       !!!!   Try `heroku config:add GITHUB_AUTH_TOKEN=<my token>`"
-  puts "       !!!!   See http://developer.github.com/v3/oauth/#non-web-application-flow"
+if [[ ! -f "${ENV_DIR}/GITHUB_AUTH_TOKEN" ]]; then
+  echo '       !!!! `GITHUB_AUTH_TOKEN` is not set' >&2
+  echo '       !!!! Try `heroku config:add GITHUB_AUTH_TOKEN=<my token>`' >&2
+  echo '       !!!! See https://help.github.com/articles/creating-an-oauth-token-for-command-line-use' >&2
   exit 1
-end
+fi
 
-netrc_template = File.read "#{File.join(File.dirname(__FILE__), '..', 'support', 'netrc')}"
+GITHUB_AUTH_TOKEN="$(cat "${ENV_DIR}/GITHUB_AUTH_TOKEN")"
 
-##
-# Supply `curl` on the BUILD machine (not in slug) with token to access private GitHub repos
-File.open "#{ENV['HOME']}/.netrc", "w+", 0600 do |f|
-  # The ../support/netrc template relies on the `github_token` variable above
-  f.puts ERB.new(netrc_template).result
-end
+# Set the credentials in `.netrc` for build time only (they are intentionally not put in the slug).
+echo "machine github.com login ${GITHUB_AUTH_TOKEN} password x-oauth-basic" >> "${HOME}/.netrc"
+echo "machine api.github.com login ${GITHUB_AUTH_TOKEN} password x-oauth-basic" >> "${HOME}/.netrc"
 
-##
-# Tell `curl` on the BUILD machine (not in slug) to use ~/.netrc
-File.open "#{ENV['HOME']}/.curlrc", "w+", 0600 do |f|
-  f.puts "--netrc-optional"
-end
+# Configure `curl` to use `.netrc` (again at build time only).
+echo '--netrc-optional' >> "${HOME}/.curlrc"
 
-if valid_login? github_token
-  puts "       Generated .netrc & .curlrc files (available only at build-time)"
+# Unset the `$GITHUB_AUTH_TOKEN` env var at runtime, so it's not exposed to the app.
+mkdir -p "${BUILD_DIR}/.profile.d"
+echo 'unset GITHUB_AUTH_TOKEN' > "${BUILD_DIR}/.profile.d/netrc.sh"
 
-  ##
-  # Remove $GITHUB_AUTH_TOKEN from runtime environment at slug boot time.
-  FileUtils.mkdir_p "#{build_dir}/.profile.d"
-  File.open "#{build_dir}/.profile.d/netrc.sh", "w+", 0600 do |f|
-    f.puts "unset GITHUB_AUTH_TOKEN"
-  end
-
-  ##
-  # Print out user information
-  puts user_block(github_token)
-else
-  puts "       !!!! No valid GitHub user found with GITHUB_AUTH_TOKEN: '#{github_token}'"
+if ! USERNAME="$(curl ${CURL_OPTIONS} https://api.github.com/user | jq --raw-output .login)"; then
+  echo '       !!!! Failed to retrieve user information from GitHub. Is `GITHUB_AUTH_TOKEN` set to a valid token?' >&2
+  echo '       !!!! See https://help.github.com/articles/creating-an-oauth-token-for-command-line-use' >&2
   exit 1
-end
+fi
+
+if ! ORGS="$({ curl ${CURL_OPTIONS} https://api.github.com/user/orgs | jq --raw-output 'map(.login) | sort | join(", ")'; } 2> /dev/null)"; then
+  ORGS="Unknown (Token needs at least 'read:org' or 'user' scopes to list organizations)"
+fi
+
+echo '       Generated .netrc & .curlrc files (available only at build-time)'
+echo "       GitHub User:   ${USERNAME}"
+echo "       Organizations: ${ORGS}"

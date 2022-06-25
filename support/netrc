@@ -1,1 +1,0 @@
-machine github.com login <%= github_token %> password x-oauth-basic

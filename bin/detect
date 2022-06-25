@@ -1,8 +1,5 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
-# If someone asks for this buildpack, it's got to be in the
-# context of another buildpack, like Multipack. Therefore,
-# we're best able to communicate the absence of the needed
-# environment variable if we fail during the 'compile' task.
+set -euo pipefail
+
 echo "github-netrc"
-exit 0
